@@ -130,7 +130,7 @@ bool expand_local_header(FILE *dest, char *src) {
         input_file = fopen(src, "r");               \
         if (!input_file) {                          \
             perror("Unable to readfile: ");         \
-            success = false;                            \
+            success = false;                        \
             goto cleanup;                           \
         }                                           \
         temp = read_lines(input_file);              \
@@ -139,7 +139,7 @@ bool expand_local_header(FILE *dest, char *src) {
             vector_append(stack, vector_pop(temp)); \
         }                                           \
         free_vector(temp);                          \
-        temp = NULL;\
+        temp = NULL;                                \
     } while (0)
     bool success = true;
     FILE *input_file = fopen(src, "r");
@@ -172,21 +172,30 @@ cleanup:
 void merge_file(FILE *dest, String **sources) {
     size_t len = vector_length(sources);
     for (size_t i = 0; i < len; i++) {
-        if(!expand_local_header(dest, sources[i])){
-            fprintf(stderr,"[ERROR] Unable to expand %s", sources[i]);
+        if (!expand_local_header(dest, sources[i])) {
+            fprintf(stderr, "[ERROR] Unable to expand %s", sources[i]);
         }
     }
 }
 
-#if 0
 int main(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    if (argc < 2) {
+        printf("USES: unify file1 file2 ....flien");
+        return 0;
+    }
+
     String **sources = Vector(*sources);
-    vector_append(sources,"./main.c");
-    vector_append(sources,"./random.txt");
-    merge_file(stdout,sources);
+
+    // shift argument by 1
+    argv++;
+    argc--;
+
+    for (int i = 0; i < argc; i++) {
+        vector_append(sources, argv[i]);
+    }
+
+    merge_file(stdout, sources);
     free_vector(sources);
+
     return 0;
 }
-#endif  //0
