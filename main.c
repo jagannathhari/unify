@@ -1,201 +1,144 @@
+/*
+TODO:
+	1. Add include path directory
+	2. Include file only once
+*/
+
+
+#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define IMPLEMENT_VECTOR
-#include "./vector.h"
+void *read_entire_file(const char *path, long *len)
+{
+	FILE *f = fopen(path, "r");
+	if (!f) {
+		*len = -1;
+		perror("Error in opening file");
+		return NULL;
+	}
 
-#define SPACE ' '
-#define INVERTED_COMMA '\"'
+	fseek(f, 0L, SEEK_END);
+	long file_size = ftell(f);
+	fseek(f, 0L, SEEK_SET);
 
-typedef char String;
+	*len = file_size;
 
-typedef enum {
-    LOCAL_HEADER,
-    SYSTEM_HEADER,
-    NOT_A_HEADER
-} HeaderType;
+	unsigned char *content = calloc(file_size + 1, sizeof(*content));
+	if (!content) {
+		fclose(f);
+		*len = -1;
+		return NULL;
+	}
 
-typedef struct {
-    HeaderType type;
-    String *path;
-} HeaderInfo;
+	long length = 0;
+	int c;
+	while ((c = getc(f)) != EOF)
+		content[length++] = c;
 
-static String *read_line(FILE *f) {
-    String *buffer = Vector(*buffer);
-    char c;
-    while ((c = fgetc(f)) != EOF && c != '\n') {
-        vector_append(buffer, (char)c);
-    }
-    if (c == EOF) {
-        return NULL;
-    }
-    vector_append(buffer, '\0');
-    return buffer;
+	content[length] = '\0';
+
+	*len = length;
+	fclose(f);
+	return content;
 }
 
-static String **read_lines(FILE *f) {
-    String **lines = Vector(*lines);
-    String *line = Vector(*line);
-    while ((line = read_line(f))) {
-        vector_append(lines, line);
-    }
-    return lines;
+char *get_include_path(char *content, long len, int *pos)
+{
+	int i = *pos;
+	int tmp = 0;
+	bool found_include = false;
+	char *res = NULL;
+	int include_offset = 0;
+	int include_start = 0;
+
+	while (i < len) {
+		char c = content[i++];
+		switch (c) {
+		case ' ':
+			continue;
+		case '\n':
+			i--;
+			goto process;
+		case '"': {
+
+			include_start = i;
+			while (i < len && found_include && content[i++] != '"')
+				include_offset++;
+
+			goto process;
+		}
+		default: {
+			// content is null terminated
+			if (c == 'i' &&
+			    strncmp(&content[i - 1], "include", 7) == 0) {
+				i += 6;
+				found_include = true;
+			}
+		}
+		}
+	}
+process:
+	if (found_include && include_offset) {
+		res = calloc(include_offset + 1, sizeof(*res));
+		assert(res);
+		memcpy(res, &content[include_start], include_offset);
+		res[include_offset] = '\0';
+		*pos = i;
+	}
+	return res;
 }
 
-static bool is_include(const String *buffer, HeaderInfo *header) {
-#define REMOVE_SPACE(buffer, len) \
-    while (*buffer == SPACE) {    \
-        buffer++;                 \
-        len--;                    \
-    }
+void unify(const char *file_path)
+{
+	long len = 0;
+	char *content = read_entire_file(file_path, &len);
 
-#define CONSUME_N_CHAR(buffer, len, n) \
-    do {                               \
-        if (len >= n) {                \
-            buffer += n;               \
-            len -= n;                  \
-        } else {                       \
-            goto not_a_valid_header;   \
-        }                              \
-    } while (0)
+	if (!len)
+		goto cleanup;
 
-    if (!header || !buffer) {
-        return false;
-    }
+	bool is_start_of_line = true;
+	int pos = 0;
+	char *include_file = NULL;
+	while (pos < len) {
+		char c = content[pos++];
+		switch (c) {
+		case '#': {
+			if (!is_start_of_line)
+				break;
 
-    String *header_name = Vector(*header_name);
+			include_file = get_include_path(content, len, &pos);
+			break;
+		}
+		case '\n':
+			is_start_of_line = true;
+			break;
+		default:
+			is_start_of_line = false;
+			break;
+		}
 
-    if (!header_name) {
-        perror("Unable to allocate memory");
-        goto not_a_valid_header;
-    }
+		if (include_file) {
+			unify(include_file);
+			free(include_file);
+			include_file = NULL;
+			continue;
+		}
+		putc(c, stdout);
+	}
 
-    size_t len = vector_length(buffer) - 1;
-
-    REMOVE_SPACE(buffer, len);
-
-    if (len < 11 || !(*buffer == '#')) {
-        goto not_a_valid_header;
-    }
-
-    CONSUME_N_CHAR(buffer, len, 1);
-
-    REMOVE_SPACE(buffer, len);
-    if (len < 10) {
-        goto not_a_valid_header;
-    }
-
-    if (strncmp(buffer, "include", 7) != 0) {
-        goto not_a_valid_header;
-    }
-
-    CONSUME_N_CHAR(buffer, len, 7);
-    REMOVE_SPACE(buffer, len);
-    if (len < 3) {
-        goto not_a_valid_header;
-    }
-    char opposite;
-    switch (*buffer) {
-    case INVERTED_COMMA:
-        opposite = INVERTED_COMMA;
-        break;
-    case '<':
-        opposite = '>';
-        break;
-    default:
-        goto not_a_valid_header;
-    }
-    CONSUME_N_CHAR(buffer, len, 1);
-    while (*buffer) {
-        if (*buffer == opposite) {
-            vector_append(header_name, '\0');
-            header->type = (opposite == '>') ? SYSTEM_HEADER : LOCAL_HEADER;
-            header->path = header_name;
-            return true;
-        }
-        vector_append(header_name, *buffer++);
-    }
-
-not_a_valid_header:
-    header->type = NOT_A_HEADER;
-    header->path = NULL;
-    free_vector(header_name);
-    return false;
-}
-
-bool expand_local_header(FILE *dest, char *src) {
-#define GET_NODES(src)                              \
-    do {                                            \
-        input_file = fopen(src, "r");               \
-        if (!input_file) {                          \
-            perror("Unable to readfile: ");         \
-            success = false;                        \
-            goto cleanup;                           \
-        }                                           \
-        temp = read_lines(input_file);              \
-        fclose(input_file);                         \
-        while (vector_length(temp)) {               \
-            vector_append(stack, vector_pop(temp)); \
-        }                                           \
-        free_vector(temp);                          \
-        temp = NULL;                                \
-    } while (0)
-    bool success = true;
-    FILE *input_file = fopen(src, "r");
-    String **stack = Vector(*stack);
-    String **temp = NULL;
-    String *line = NULL;
-    HeaderInfo headerinfo;
-    GET_NODES(src);
-    while (vector_length(stack)) {
-        line = vector_pop(stack);
-        if (is_include(line, &headerinfo) && headerinfo.type == LOCAL_HEADER) {
-            GET_NODES(headerinfo.path);
-        } else {
-            fputs(line, dest);
-            fputc('\n', dest);
-            free_vector(line);
-            line = NULL;
-        }
-    }
 cleanup:
-    for (size_t i = 0; i < vector_length(stack); i++) {
-        free_vector(stack[i]);
-    }
-    free_vector(stack);
-    free_vector(temp);
-    free_vector(line);
-    return success;
+	free(content);
 }
 
-void merge_file(FILE *dest, String **sources) {
-    size_t len = vector_length(sources);
-    for (size_t i = 0; i < len; i++) {
-        if (!expand_local_header(dest, sources[i])) {
-            fprintf(stderr, "[ERROR] Unable to expand %s", sources[i]);
-        }
-    }
-}
-
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        printf("USES: unify file1 file2 ....flien");
-        return 0;
-    }
-
-    String **sources = Vector(*sources);
-
-    // shift argument by 1
-    argv++;
-    argc--;
-
-    for (int i = 0; i < argc; i++) {
-        vector_append(sources, argv[i]);
-    }
-
-    merge_file(stdout, sources);
-    free_vector(sources);
-
-    return 0;
+int main(int argc, char *argv[])
+{
+	argv++;
+	argc--;
+	for (int i = 0; i < argc; i++) {
+		unify(argv[i]);
+	}
+	return 0;
 }
