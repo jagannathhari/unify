@@ -1,7 +1,6 @@
 /*
 TODO:
 	1. Add include path directory
-	2. Include file only once
 */
 
 
@@ -10,6 +9,29 @@ TODO:
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef struct 
+{
+	int capacity;
+	int len;
+	char** items;
+} StrArray;
+
+
+#define array_push(arr,item)\
+do{\
+	if((arr)->capacity == (arr)->len){\
+		int new_capacity = (arr)->capacity<<1;\
+		(arr)->items = realloc((arr)->items,sizeof(*(arr)->items)*new_capacity);\
+		assert((arr)->items);\
+		(arr)->capacity  = new_capacity;\
+	}\
+	(arr)->items[(arr)->len++] = item;\
+		\
+} while(0)
+
+StrArray seen = {0};
+
 
 void *read_entire_file(const char *path, long *len)
 {
@@ -121,8 +143,15 @@ void unify(const char *file_path)
 		}
 
 		if (include_file) {
+			for(int idx = 0;idx<seen.len;idx++)
+				if(strcmp(seen.items[idx],include_file)==0){
+					free(include_file);
+					goto skip;
+				}
+
+			array_push(&seen,include_file);
 			unify(include_file);
-			free(include_file);
+		skip:
 			include_file = NULL;
 			continue;
 		}
@@ -135,10 +164,27 @@ cleanup:
 
 int main(int argc, char *argv[])
 {
+	if(argc == 1){
+		printf("Uses: unify file1.c file2.c .... filen.c\n");
+		return 0;
+	}
+
 	argv++;
 	argc--;
+	const int n = 1<<10;
+	seen.items = calloc(n,sizeof(*seen.items)); 
+	assert(seen.items);
+	
+	seen.capacity = n;
+
 	for (int i = 0; i < argc; i++) {
 		unify(argv[i]);
 	}
+
+	for(int i = 0;i<seen.len;i++) 
+		free(seen.items[i]);
+	
+
+	free(seen.items);
 	return 0;
 }
