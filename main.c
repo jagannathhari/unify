@@ -1,14 +1,11 @@
-/*
-TODO:
-	1. Add include path directory
-*/
-
-
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+
+#include <sys/stat.h>
 
 typedef struct 
 {
@@ -31,14 +28,33 @@ do{\
 } while(0)
 
 StrArray seen = {0};
+StrArray search_path = {0};
+StrArray file_list = {0};
 
+int max_dir_len  = 0;
+
+typedef enum{
+	PATH_FILE,
+	PATH_DIR,
+	PATH_INVALID,
+}path_t;
+
+path_t path_type(const char *p)
+{
+    struct stat s;
+    if (stat(p, &s) != 0) return PATH_INVALID;
+    if (S_ISREG(s.st_mode)) return PATH_FILE;
+    if (S_ISDIR(s.st_mode)) return PATH_DIR;
+    return PATH_INVALID;
+}
 
 void *read_entire_file(const char *path, long *len)
 {
 	FILE *f = fopen(path, "r");
+
 	if (!f) {
 		*len = -1;
-		perror("Error in opening file");
+		fprintf(stderr,"%s, %s\n",path,strerror(errno));
 		return NULL;
 	}
 
@@ -115,8 +131,36 @@ process:
 
 void unify(const char *file_path)
 {
+
 	long len = 0;
-	char *content = read_entire_file(file_path, &len);
+	char* content = NULL; 
+
+	int buffer_len = max_dir_len + strlen(file_path) + 2;
+	char* buffer = calloc(buffer_len,sizeof(*buffer));
+	assert(buffer);
+	
+	switch(path_type(file_path)){
+		case PATH_DIR:
+			fprintf(stderr,"%s is Dir, expected file. Skipping\n",file_path);
+			break;
+		case PATH_FILE:
+			content = read_entire_file(file_path, &len);
+			break;
+		default:
+		{
+			for(int i=0;i<search_path.len;i++){
+
+				snprintf(buffer,buffer_len,"%s/%s",search_path.items[i],file_path);
+				if(path_type(buffer)==PATH_FILE){
+					content = read_entire_file(buffer, &len);
+					break;
+				}
+			}
+
+			if(content==NULL)
+				fprintf(stderr,"%s cannot find this file. Skipping..\n",file_path);
+		}
+	}
 
 	if (!len)
 		goto cleanup;
@@ -159,6 +203,7 @@ void unify(const char *file_path)
 	}
 
 cleanup:
+	free(buffer);
 	free(content);
 }
 
@@ -171,20 +216,49 @@ int main(int argc, char *argv[])
 
 	argv++;
 	argc--;
+
 	const int n = 1<<10;
-	seen.items = calloc(n,sizeof(*seen.items)); 
+
+	seen.items = calloc(n,sizeof(*seen.items));
 	assert(seen.items);
-	
 	seen.capacity = n;
 
+	search_path.items = calloc(n,sizeof(*search_path.items));
+	assert(search_path.items);
+	search_path.capacity = n;
+
+	file_list.items = calloc(argc,sizeof(*file_list.items));
+	assert(file_list.items);
+	file_list.capacity = argc;
+
 	for (int i = 0; i < argc; i++) {
-		unify(argv[i]);
+		if(strcmp(argv[i],"-I")==0){
+			i++;
+			if(i==argc){
+				fprintf(stderr,"Expected path, got nothing.\n");
+				return 0;
+			}
+
+			if(!(path_type(argv[i])==PATH_DIR))
+				fprintf(stderr,"%s is not valid path, skiping..\n",argv[i]);
+			else{
+				array_push(&search_path,argv[i]);
+				const int path_len = strlen(argv[i]);
+				max_dir_len = (max_dir_len < path_len)?path_len:max_dir_len;
+			}
+		} else
+			array_push(&file_list,argv[i]);
 	}
 
-	for(int i = 0;i<seen.len;i++) 
+	for(int i = 0;i<file_list.len;i++)
+		unify(file_list.items[i]);
+
+	for(int i = 0;i<seen.len;i++)
 		free(seen.items[i]);
-	
 
 	free(seen.items);
+	free(search_path.items);
+	free(file_list.items);
+
 	return 0;
 }
