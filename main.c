@@ -15,17 +15,19 @@ typedef struct
 } StrArray;
 
 
-#define array_push(arr,item)\
-do{\
-	if((arr)->capacity == (arr)->len){\
-		int new_capacity = (arr)->capacity<<1;\
-		(arr)->items = realloc((arr)->items,sizeof(*(arr)->items)*new_capacity);\
-		assert((arr)->items);\
-		(arr)->capacity  = new_capacity;\
-	}\
-	(arr)->items[(arr)->len++] = item;\
-		\
-} while(0)
+#define array_push(arr, item)                                                  \
+	do {                                                                   \
+		if ((arr)->capacity == (arr)->len) {                           \
+			int new_capacity = (arr)->capacity << 1;               \
+			(arr)->items =                                         \
+			    realloc((arr)->items,                              \
+				    sizeof(*(arr)->items) * new_capacity);     \
+			assert((arr)->items);                                  \
+			(arr)->capacity = new_capacity;                        \
+		}                                                              \
+		(arr)->items[(arr)->len++] = item;                             \
+                                                                               \
+	} while (0)
 
 StrArray seen = {0};
 StrArray search_path = {0};
