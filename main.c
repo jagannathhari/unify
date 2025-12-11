@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
 	file_list.capacity = argc;
 
 	for (int i = 0; i < argc; i++) {
-		if(strcmp(argv[i],"-I")==0){
+		if(strcmp(argv[i],"-I")==0 || strcmp(argv[i],"=i")==0){
 			i++;
 			if(i==argc){
 				fprintf(stderr,"Expected path, got nothing.\n");
